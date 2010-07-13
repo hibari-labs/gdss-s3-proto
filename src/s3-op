@@ -1,0 +1,115 @@
+#!/bin/bash
+
+help() {
+    echo "usage: $0 get-service OPTIONS"
+    echo "       $0 (get|delete)-bucket BUCKET OPTIONS"
+    echo "       $0 (get|head|delete)-object BUCKET KEY OPTIONS"
+    echo "       $0 put-object BUCKET KEY VAL OPTIONS"
+    echo
+    echo "OPTIONS are:"
+    echo "  --host HOST            connect to HOST"
+    echo "  --port PORT            connect on PORT"
+    echo "  --key-id ID            pass ID as AWS Key ID"
+    echo "  --key-data DATA        pass DATA as AWS Key Data"
+    echo "  --nosend               don't send the request"
+
+    exit
+}
+
+function make_call() {
+    mod='mod_gdss_s3_proto'
+    case "$op" in
+        'get-service') echo "$mod:make_get_service(\"$host\", \"$key_id\", \"$key_data\")";;
+        'get-bucket') echo "$mod:make_get_bucket(\"$bucket\", \"$host\", \"$key_id\", \"$key_data\")";;
+        'get-object') echo "$mod:make_get_object(\"$bucket\", \"$key\", \"$host\", \"$key_id\", \"$key_data\")";;
+        'head-object') echo "$mod:make_head_object(\"$bucket\", \"$key\", \"$host\", \"$key_id\", \"$key_data\")";;
+        'put-bucket') echo "$mod:make_put_bucket(\"$bucket\", \"$host\", \"$key_id\", \"$key_data\")";;
+        'put-object') echo "$mod:make_put_object(\"$bucket\", \"$key\", <<\"$val\">>, \"$host\", \"$key_id\", \"$key_data\")";;
+        'delete-bucket') echo "$mod:make_delete_bucket(\"$bucket\", \"$host\", \"$key_id\", \"$key_data\")";;
+        'add-user') echo "$mod:make_add_user(\"$name\", \"$host\")";;
+    esac
+}
+
+function make_eval() {
+    echo 'io:format("~s", ['`make_call`']).'
+}
+
+ebin='../ebin'
+src=~/src/GDSS/src/erl-apps/gdss-s3-proto__HEAD/src
+
+if [ -d $src ]; then
+    cd $src
+fi
+
+host=localhost
+port=23580
+send=true
+
+if [ -f ~/.s3-key-id ]; then
+    key_id=`cat ~/.s3-key-id`
+fi
+
+if [ -f ~/s3-key-data ]; then
+    key_data=`cat ~/.s3-key-data`
+fi
+
+i=0
+args=( "$@" )
+for arg in "$@"; do
+    j=$((i + 1))
+
+    if [ "$i" = '0' ]; then
+        op="${args[$i]}"
+    elif [ "$i" = '1' ]; then
+        case "$op" in
+            *-bucket) bucket="${args[$i]}";;
+            *-object) bucket="${args[$i]}";;
+        esac
+    elif [ "$i" = '2' ]; then
+        case "$op" in
+            *-object) key="${args[$i]}";;
+        esac
+    elif [ "$i" = '3' ]; then
+        case "$op" in
+            put-object) val="${args[$i]}";;
+        esac
+    fi
+
+    if [ "$arg" = '--host' ]; then
+        host="${args[$j]}"
+    elif [ "$arg" = '--port' ]; then
+        port="${args[$j]}"
+    elif [ "$arg" = '--op' ]; then
+        op="${args[$j]}"
+    elif [ "$arg" = '--bucket' ]; then
+        bucket="${args[$j]}"
+    elif [ "$arg" = '--key' ]; then
+        key="${args[$j]}"
+    elif [ "$arg" = '--key-id' ]; then
+        key_id="${args[$j]}"
+    elif [ "$arg" = '--key-data' ]; then
+        key_data="${args[$j]}"
+    elif [ "$arg" = '--val' ]; then
+        val="${args[$j]}"
+    elif [ "$arg" = '--file' ]; then
+        file="${args[$j]}"
+    elif [ "$arg" = '--name' ]; then
+        name="${args[$j]}"
+    elif [ "$arg" = '--nosend' ]; then
+        send='false'
+    elif [ "$arg" = '--help' -o "$arg" = '-h' ]; then
+        help
+    fi
+   
+    ((i += 1))
+done
+
+if [ -z "$op" ]; then
+    help
+fi
+
+erl -pa "$ebin" -noinput -eval 'crypto_sup:start_link().' -eval "`make_eval`" -s erlang halt 
+if "$send"; then
+    erl -pa "$ebin" -noinput -eval 'crypto_sup:start_link().' -eval "`make_eval`" -s erlang halt  | nc "$host" "$port"
+fi
+echo

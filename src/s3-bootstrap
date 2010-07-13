@@ -1,0 +1,32 @@
+#!/bin/sh
+
+buckets='bucket pail trough'
+N=5
+name='Joey Yandle'
+
+response=`s3-op --op add-user --name "$name"`
+key_id=`echo "$response" | grep X-Amz-Key-Id: | sed -e 's/X-Amz-Key-Id: //' | sed -e 's/\r//'`
+key_data=`echo "$response" | grep X-Amz-Key: | sed -e 's/X-Amz-Key: //' | sed -e 's/\r//'`
+echo "Got new key for $name: '$key_id' -> '$key_data'"
+
+echo -n "$key_id" > ~/.s3-key-id
+echo -n "$key_data" > ~/.s3-key-data
+
+s3-op --key-id "$key_id" --op get-service --key-data "$key_data"
+
+for bucket in $buckets; do
+    s3-op --key-id "$key_id" --op put-bucket --bucket "$bucket"  --key-data "$key_data"
+
+    for (( i=0; i<$N; i++ )); do
+        s3-op --key-id "$key_id" --key-data "$key_data" --op put-object --bucket "$bucket" --key "key$i$bucket" --val "$val$i$bucket"
+    done
+done
+
+s3-op --key-id "$key_id" --key-data "$key_data" --op get-service 
+
+for bucket in $buckets; do
+    s3-op --key-id "$key_id" --key-data "$key_data" --op get-bucket --bucket "$bucket"
+done
+
+
+echo
