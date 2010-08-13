@@ -17,8 +17,8 @@
 %% The Initial Developer of the Original Code is Ericsson AB.
 %%</legalnotice>
 %%
-%% Description: Implements a request handler process for the HTTP server.  
-%% 
+%% Description: Implements a request handler process for the HTTP server.
+%%
 
 -module(httpd_request_handler).
 
@@ -29,22 +29,27 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+         terminate/2, code_change/3]).
 
+-ifdef(new_inets).
+-include_lib("inets/src/http_lib/http_internal.hrl").
+-include_lib("inets/src/http_server/httpd.hrl").
+-else.
 -include_lib("inets/src/http_internal.hrl").
 -include_lib("inets/src/httpd.hrl").
+-endif.
 
 -record(state, {mod,     %% #mod{}
-		manager, %% pid()
-		status,  %% accept | busy | blocked
-		mfa,     %% {Module, Function, Args} 
-		max_keep_alive_request = infinity, %% integer() | infinity
-		response_sent = false, %% true | false 
-		timeout,  %% infinity | integer() > 0
-		timer,     %% ref() - Request timer
-		headers,  %% #http_request_h{}
-		body      %% binary()
-	       }).
+                manager, %% pid()
+                status,  %% accept | busy | blocked
+                mfa,     %% {Module, Function, Args}
+                max_keep_alive_request = infinity, %% integer() | infinity
+                response_sent = false, %% true | false
+                timeout,  %% infinity | integer() > 0
+                timer,     %% ref() - Request timer
+                headers,  %% #http_request_h{}
+                body      %% binary()
+               }).
 
 %%====================================================================
 %% Application internal API
@@ -63,7 +68,7 @@ start(Manager, ConfigDB, AcceptTimeout) ->
 %% socket_ownership_transfered(Pid, SocketType, Socket) -> void()
 %%
 %% Pid = pid()
-%% SocketType = ip_comm | ssl 
+%% SocketType = ip_comm | ssl
 %% Socket = socket()
 %%
 %% Description: Send a message to the request handler process
@@ -77,60 +82,60 @@ socket_ownership_transfered(Pid, SocketType, Socket) ->
 %%--------------------------------------------------------------------
 %% Function: init(Args) -> _
 %%
-%% Description: Initiates the server. Obs special init that uses 
+%% Description: Initiates the server. Obs special init that uses
 %% gen_server:enter_loop/3. This is used instead of the normal
 %% gen_server callback init, as a more complex init than the
-%% gen_server provides is needed. 
+%% gen_server provides is needed.
 %%--------------------------------------------------------------------
 init([Manager, ConfigDB,AcceptTimeout]) ->
     %% Make sure this process terminates if the httpd manager process
     %% should die!
-    link(Manager), 
+    link(Manager),
     %% At this point the function httpd_request_handler:start/2 will return.
     proc_lib:init_ack({ok, self()}),
-    
+
     {SocketType, Socket} = await_socket_ownership_transfer(AcceptTimeout),
-    
+
     TimeOut = httpd_util:lookup(ConfigDB, keep_alive_timeout, 150000),
 
     Then = erlang:now(),
-    
+
     case http_transport:negotiate(SocketType,Socket,TimeOut) of
-	{error, Error} ->
-	    exit(Error); %% Can be 'normal'.
-	ok ->
-	    NewTimeout = TimeOut - timer:now_diff(now(),Then) div 1000,
-	    continue_init(Manager, ConfigDB, SocketType,Socket,NewTimeout)
+        {error, Error} ->
+            exit(Error); %% Can be 'normal'.
+        ok ->
+            NewTimeout = TimeOut - timer:now_diff(now(),Then) div 1000,
+            continue_init(Manager, ConfigDB, SocketType,Socket,NewTimeout)
     end.
 
 continue_init(Manager, ConfigDB, SocketType, Socket, TimeOut) ->
     Resolve = http_transport:resolve(),
-    
+
     Peername = httpd_socket:peername(SocketType, Socket),
     InitData = #init_data{peername = Peername, resolve = Resolve},
     Mod = #mod{config_db = ConfigDB,
                socket_type = SocketType,
                socket = Socket,
                init_data = InitData},
-    
+
     MaxHeaderSize = httpd_util:lookup(ConfigDB, max_header_size,
-				      ?HTTP_MAX_HEADER_SIZE),
+                                      ?HTTP_MAX_HEADER_SIZE),
     MaxURISize = httpd_util:lookup(ConfigDB, max_uri_size,
-				   ?HTTP_MAX_URI_SIZE),
+                                   ?HTTP_MAX_URI_SIZE),
     NrOfRequest = httpd_util:lookup(ConfigDB,
-				    max_keep_alive_request, infinity),
-    
+                                    max_keep_alive_request, infinity),
+
     {_, Status} = httpd_manager:new_connection(Manager),
-    
+
     State = #state{mod = Mod, manager = Manager, status = Status,
-		   timeout = TimeOut, max_keep_alive_request = NrOfRequest,
-		   mfa = {httpd_request, parse, [{MaxURISize,
-						  MaxHeaderSize}]}},
-    
+                   timeout = TimeOut, max_keep_alive_request = NrOfRequest,
+                   mfa = {httpd_request, parse, [{MaxURISize,
+                                                  MaxHeaderSize}]}},
+
     NewState = activate_request_timeout(State),
-    
+
     http_transport:setopts(SocketType, Socket, [binary,{packet, 0},
-						{active, once}]),
+                                                {active, once}]),
     gen_server:enter_loop(?MODULE, [], NewState).
 
 %%====================================================================
@@ -164,34 +169,34 @@ handle_cast(Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({Proto, Socket, Data}, State = 
-	    #state{mfa = {Module, Function, Args},
-		   mod = #mod{socket_type = SockType, 
-			      socket = Socket} = ModData} 
-	    = State) when Proto == tcp; Proto == ssl; Proto == dummy ->
-  
+handle_info({Proto, Socket, Data}, State =
+            #state{mfa = {Module, Function, Args},
+                   mod = #mod{socket_type = SockType,
+                              socket = Socket} = ModData}
+            = State) when Proto == tcp; Proto == ssl; Proto == dummy ->
+
     case Module:Function([Data | Args]) of
         {ok, Result} ->
-	    NewState = cancel_request_timeout(State),
-            handle_http_msg(Result, NewState); 
-	{error, {uri_too_long, MaxSize}, Version} ->
-	    NewModData =  ModData#mod{http_version = Version},
-	    httpd_response:send_status(NewModData, 414, "URI too long"),
-	    Reason = io_lib:format("Uri too long, max size is ~p~n", 
-				   [MaxSize]),
-	    error_log(Reason, NewModData),
-	    {stop, normal, State#state{response_sent = true, 
-				       mod = NewModData}};
-	{error, {header_too_long, MaxSize}, Version} ->
-	    NewModData =  ModData#mod{http_version = Version},
-	    httpd_response:send_status(NewModData, 413, "Header too long"),
-	    Reason = io_lib:format("Header too long, max size is ~p~n", 
-				   [MaxSize]),
-	    error_log(Reason, NewModData),
-	    {stop, normal, State#state{response_sent = true, 
-				       mod = NewModData}};
-	NewMFA ->
-	    http_transport:setopts(SockType, Socket, [{active, once}]),
+            NewState = cancel_request_timeout(State),
+            handle_http_msg(Result, NewState);
+        {error, {uri_too_long, MaxSize}, Version} ->
+            NewModData =  ModData#mod{http_version = Version},
+            httpd_response:send_status(NewModData, 414, "URI too long"),
+            Reason = io_lib:format("Uri too long, max size is ~p~n",
+                                   [MaxSize]),
+            error_log(Reason, NewModData),
+            {stop, normal, State#state{response_sent = true,
+                                       mod = NewModData}};
+        {error, {header_too_long, MaxSize}, Version} ->
+            NewModData =  ModData#mod{http_version = Version},
+            httpd_response:send_status(NewModData, 413, "Header too long"),
+            Reason = io_lib:format("Header too long, max size is ~p~n",
+                                   [MaxSize]),
+            error_log(Reason, NewModData),
+            {stop, normal, State#state{response_sent = true,
+                                       mod = NewModData}};
+        NewMFA ->
+            http_transport:setopts(SockType, Socket, [{active, once}]),
             {noreply, State#state{mfa = NewMFA}}
     end;
 
@@ -207,20 +212,20 @@ handle_info({ssl_error, _, _} = Reason, State) ->
 
 %% Timeouts
 handle_info(timeout, #state{mod = ModData, mfa = {_, parse, _}} = State) ->
-    error_log("No request received on keep-alive connection" 
-	      "before server side timeout", ModData),
+    error_log("No request received on keep-alive connection"
+              "before server side timeout", ModData),
     %% No response should be sent!
-    {stop, normal, State#state{response_sent = true}}; 
+    {stop, normal, State#state{response_sent = true}};
 handle_info(timeout, #state{mod = ModData} = State) ->
     httpd_response:send_status(ModData, 408, "Request timeout"),
     error_log("The client did not send the whole request before the"
-	      "server side timeout", ModData),
+              "server side timeout", ModData),
     {stop, normal, State#state{response_sent = true}};
 
 %% Default case
 handle_info(Info, #state{mod = ModData} = State) ->
     Error = lists:flatten(
-	      io_lib:format("Unexpected message received: ~n~p~n", [Info])),
+              io_lib:format("Unexpected message received: ~n~p~n", [Info])),
     error_log(Error, ModData),
     {noreply, State}.
 
@@ -259,65 +264,65 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 await_socket_ownership_transfer(AcceptTimeout) ->
     receive
-	{socket_ownership_transfered, SocketType, Socket} ->
-	    {SocketType, Socket}
+        {socket_ownership_transfered, SocketType, Socket} ->
+            {SocketType, Socket}
     after AcceptTimeout ->
-	    exit(accept_socket_timeout)
+            exit(accept_socket_timeout)
     end.
 
 handle_http_msg({_, _, Version, {_, _}, _}, #state{status = busy,
-						   mod = ModData} = State) -> 
-    handle_manager_busy(State#state{mod = 
-				    ModData#mod{http_version = Version}}),
-    {stop, normal, State}; 
+                                                   mod = ModData} = State) ->
+    handle_manager_busy(State#state{mod =
+                                    ModData#mod{http_version = Version}}),
+    {stop, normal, State};
 
-handle_http_msg({_, _, Version, {_, _}, _}, 
-		#state{status = blocked, mod = ModData} = State) ->
-    handle_manager_blocked(State#state{mod = 
-				       ModData#mod{http_version = Version}}),
-    {stop, normal, State}; 
+handle_http_msg({_, _, Version, {_, _}, _},
+                #state{status = blocked, mod = ModData} = State) ->
+    handle_manager_blocked(State#state{mod =
+                                       ModData#mod{http_version = Version}}),
+    {stop, normal, State};
 
 handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
-		#state{status = accept, mod = ModData} = State) ->        
+                #state{status = accept, mod = ModData} = State) ->
     case httpd_request:validate(Method, Uri, Version) of
-	ok  ->
-	    {ok, NewModData} = 
-		httpd_request:update_mod_data(ModData, Method, Uri,
-					      Version, Headers),
-      
-	    case is_host_specified_if_required(NewModData#mod.absolute_uri,
-					       RecordHeaders, Version) of
-		true ->
-		    handle_body(State#state{headers = RecordHeaders,
-					    body = Body,
-					    mod = NewModData});
-		false ->
-		    httpd_response:send_status(ModData#mod{http_version = 
-							   Version}, 
-					       400, none),
-		    {stop, normal, State#state{response_sent = true}}
-	    end;
-	{error, {not_supported, What}} ->
-	    httpd_response:send_status(ModData#mod{http_version = Version},
-				       501, {Method, Uri, Version}),
-	    Reason = io_lib:format("Not supported: ~p~n", [What]),
-	    error_log(Reason, ModData),
-	    {stop, normal, State#state{response_sent = true}};
-	{error, {bad_request, {forbidden, URI}}} ->
-	    httpd_response:send_status(ModData#mod{http_version = Version},
-				       403, URI),
-	    Reason = io_lib:format("Forbidden URI: ~p~n", [URI]),
-	    error_log(Reason, ModData),
-	    {stop, normal, State#state{response_sent = true}};
-	{error,{bad_request, {malformed_syntax, URI}}} ->
-	    httpd_response:send_status(ModData#mod{http_version = Version},
-				       400, URI),
-	    Reason = io_lib:format("Malformed syntax in URI: ~p~n", [URI]),
-	    error_log(Reason, ModData),
-	    {stop, normal, State#state{response_sent = true}}
+        ok  ->
+            {ok, NewModData} =
+                httpd_request:update_mod_data(ModData, Method, Uri,
+                                              Version, Headers),
+
+            case is_host_specified_if_required(NewModData#mod.absolute_uri,
+                                               RecordHeaders, Version) of
+                true ->
+                    handle_body(State#state{headers = RecordHeaders,
+                                            body = Body,
+                                            mod = NewModData});
+                false ->
+                    httpd_response:send_status(ModData#mod{http_version =
+                                                           Version},
+                                               400, none),
+                    {stop, normal, State#state{response_sent = true}}
+            end;
+        {error, {not_supported, What}} ->
+            httpd_response:send_status(ModData#mod{http_version = Version},
+                                       501, {Method, Uri, Version}),
+            Reason = io_lib:format("Not supported: ~p~n", [What]),
+            error_log(Reason, ModData),
+            {stop, normal, State#state{response_sent = true}};
+        {error, {bad_request, {forbidden, URI}}} ->
+            httpd_response:send_status(ModData#mod{http_version = Version},
+                                       403, URI),
+            Reason = io_lib:format("Forbidden URI: ~p~n", [URI]),
+            error_log(Reason, ModData),
+            {stop, normal, State#state{response_sent = true}};
+        {error,{bad_request, {malformed_syntax, URI}}} ->
+            httpd_response:send_status(ModData#mod{http_version = Version},
+                                       400, URI),
+            Reason = io_lib:format("Malformed syntax in URI: ~p~n", [URI]),
+            error_log(Reason, ModData),
+            {stop, normal, State#state{response_sent = true}}
     end;
-handle_http_msg({ChunkedHeaders, Body}, 
-		State = #state{headers = Headers}) ->
+handle_http_msg({ChunkedHeaders, Body},
+                State = #state{headers = Headers}) ->
     NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
     handle_response(State#state{headers = NewHeaders, body = Body});
 handle_http_msg(Body, State) ->
@@ -334,169 +339,169 @@ handle_manager_blocked(State) ->
 
 reject_connection(#state{mod = ModData} = State, Reason) ->
     httpd_response:send_status(ModData, 503, Reason),
-    {stop, normal, State#state{response_sent = true}}. 
+    {stop, normal, State#state{response_sent = true}}.
 
-is_host_specified_if_required(nohost, #http_request_h{host = undefined}, 
-			      "HTTP/1.1") ->
+is_host_specified_if_required(nohost, #http_request_h{host = undefined},
+                              "HTTP/1.1") ->
     false;
 is_host_specified_if_required(_, _, _) ->
     true.
 
 handle_body(#state{mod = #mod{config_db = ConfigDB}} = State) ->
-    
+
     MaxHeaderSize =
-	httpd_util:lookup(ConfigDB, max_header_size, ?HTTP_MAX_HEADER_SIZE),
+        httpd_util:lookup(ConfigDB, max_header_size, ?HTTP_MAX_HEADER_SIZE),
     MaxBodySize = httpd_util:lookup(ConfigDB, max_body_size, nolimit),
-   
-    case handle_expect(State, MaxBodySize) of 
-	ok ->
-	    handle_body(State, MaxHeaderSize, MaxBodySize);
-	Other ->
-	    Other
-    
-    end.
-	
-handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
-	    MaxHeaderSize, MaxBodySize) ->
-    case Headers#http_request_h.'transfer-encoding' of
-	"chunked" ->
-	    case http_chunk:decode(Body, MaxBodySize, MaxHeaderSize) of
-		{Module, Function, Args} ->
-		    http_transport:setopts(ModData#mod.socket_type, 
-					   ModData#mod.socket, 
-					   [{active, once}]),
-		    {noreply, State#state{mfa = 
-					  {Module, Function, Args}}};
-		{ok, {ChunkedHeaders, NewBody}} ->
-		    NewHeaders = 
-			http_chunk:handle_headers(Headers, ChunkedHeaders),
-		    handle_response(State#state{headers = NewHeaders,
-						body = NewBody})
-	    end;
-	Encoding when is_list(Encoding) ->
-	    httpd_response:send_status(ModData, 501, 
-				       "Unknown Transfer-Encoding"),
-	    Reason = io_lib:format("Unknown Transfer-Encoding: ~p~n", 
-				   [Encoding]),
-	    error_log(Reason, ModData),
-	    {stop, normal, State#state{response_sent = true}};
-	_ -> 
-	    Length = 
-		list_to_integer(Headers#http_request_h.'content-length'),
-	    case ((Length =< MaxBodySize) or (MaxBodySize == nolimit)) of
-		true ->
-		    case httpd_request:whole_body(Body, Length) of 
-			{Module, Function, Args} ->
-			    http_transport:setopts(ModData#mod.socket_type, 
-						   ModData#mod.socket, 
-						   [{active, once}]),
-			    {noreply, State#state{mfa = 
-						  {Module, Function, Args}}};
-			
-			{ok, NewBody} ->
-			    handle_response(
-			      State#state{headers = Headers,
-					  body = NewBody})
-		    end;
-		false ->
-		    httpd_response:send_status(ModData, 413, "Body too long"),
-		    error_log("Body too long", ModData),
-		    {stop, normal,  State#state{response_sent = true}}
-	    end
+
+    case handle_expect(State, MaxBodySize) of
+        ok ->
+            handle_body(State, MaxHeaderSize, MaxBodySize);
+        Other ->
+            Other
+
     end.
 
-handle_expect(#state{headers = Headers, mod = 
-		     #mod{config_db = ConfigDB} = ModData} = State, 
-	      MaxBodySize) ->
+handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
+            MaxHeaderSize, MaxBodySize) ->
+    case Headers#http_request_h.'transfer-encoding' of
+        "chunked" ->
+            case http_chunk:decode(Body, MaxBodySize, MaxHeaderSize) of
+                {Module, Function, Args} ->
+                    http_transport:setopts(ModData#mod.socket_type,
+                                           ModData#mod.socket,
+                                           [{active, once}]),
+                    {noreply, State#state{mfa =
+                                          {Module, Function, Args}}};
+                {ok, {ChunkedHeaders, NewBody}} ->
+                    NewHeaders =
+                        http_chunk:handle_headers(Headers, ChunkedHeaders),
+                    handle_response(State#state{headers = NewHeaders,
+                                                body = NewBody})
+            end;
+        Encoding when is_list(Encoding) ->
+            httpd_response:send_status(ModData, 501,
+                                       "Unknown Transfer-Encoding"),
+            Reason = io_lib:format("Unknown Transfer-Encoding: ~p~n",
+                                   [Encoding]),
+            error_log(Reason, ModData),
+            {stop, normal, State#state{response_sent = true}};
+        _ ->
+            Length =
+                list_to_integer(Headers#http_request_h.'content-length'),
+            case ((Length =< MaxBodySize) or (MaxBodySize == nolimit)) of
+                true ->
+                    case httpd_request:whole_body(Body, Length) of
+                        {Module, Function, Args} ->
+                            http_transport:setopts(ModData#mod.socket_type,
+                                                   ModData#mod.socket,
+                                                   [{active, once}]),
+                            {noreply, State#state{mfa =
+                                                  {Module, Function, Args}}};
+
+                        {ok, NewBody} ->
+                            handle_response(
+                              State#state{headers = Headers,
+                                          body = NewBody})
+                    end;
+                false ->
+                    httpd_response:send_status(ModData, 413, "Body too long"),
+                    error_log("Body too long", ModData),
+                    {stop, normal,  State#state{response_sent = true}}
+            end
+    end.
+
+handle_expect(#state{headers = Headers, mod =
+                     #mod{config_db = ConfigDB} = ModData} = State,
+              MaxBodySize) ->
     Length = Headers#http_request_h.'content-length',
     case expect(Headers, ModData#mod.http_version, ConfigDB) of
-	continue when MaxBodySize > Length; MaxBodySize == nolimit ->
-	    httpd_response:send_status(ModData, 100, ""),
-	    ok;
-	continue when MaxBodySize < Length ->
-	    httpd_response:send_status(ModData, 413, "Body too long"),
-	    error_log("Body too long", ModData),
-	    {stop, normal, State#state{response_sent = true}};
-	{break, Value} ->
-	    httpd_response:send_status(ModData, 417, 
-				       "Unexpected expect value"),
-	    Reason = io_lib:format("Unexpected expect value: ~p~n", [Value]),
-	    error_log(Reason, ModData),
-	    {stop, normal,  State#state{response_sent = true}};
-	no_expect_header ->
-	    ok;
-	http_1_0_expect_header ->
-	    httpd_response:send_status(ModData, 400, 
-				       "Only HTTP/1.1 Clients "
-				       "may use the Expect Header"),
-	    error_log("Client with lower version than 1.1 tried to send"
-		      "an expect header", ModData),
-	    {stop, normal, State#state{response_sent = true}}
+        continue when MaxBodySize > Length; MaxBodySize == nolimit ->
+            httpd_response:send_status(ModData, 100, ""),
+            ok;
+        continue when MaxBodySize < Length ->
+            httpd_response:send_status(ModData, 413, "Body too long"),
+            error_log("Body too long", ModData),
+            {stop, normal, State#state{response_sent = true}};
+        {break, Value} ->
+            httpd_response:send_status(ModData, 417,
+                                       "Unexpected expect value"),
+            Reason = io_lib:format("Unexpected expect value: ~p~n", [Value]),
+            error_log(Reason, ModData),
+            {stop, normal,  State#state{response_sent = true}};
+        no_expect_header ->
+            ok;
+        http_1_0_expect_header ->
+            httpd_response:send_status(ModData, 400,
+                                       "Only HTTP/1.1 Clients "
+                                       "may use the Expect Header"),
+            error_log("Client with lower version than 1.1 tried to send"
+                      "an expect header", ModData),
+            {stop, normal, State#state{response_sent = true}}
     end.
 
 expect(Headers, "HTTP/1.1", _) ->
     case Headers#http_request_h.expect of
-	"100-continue" ->
-	    continue; 
-	undefined ->
-	    no_expect_header;
-	Other ->
-	    {break, Other}
+        "100-continue" ->
+            continue;
+        undefined ->
+            no_expect_header;
+        Other ->
+            {break, Other}
     end;
 expect(Headers, _, ConfigDB) ->
     case Headers#http_request_h.expect of
-	undefined ->
-	    no_expect_header;
-	_ ->
-	    case httpd_util:lookup(ConfigDB, expect, continue) of
-		continue->
-		    no_expect_header;
-		_ ->
-		    http_1_0_expect_header
-	    end
+        undefined ->
+            no_expect_header;
+        _ ->
+            case httpd_util:lookup(ConfigDB, expect, continue) of
+                continue->
+                    no_expect_header;
+                _ ->
+                    http_1_0_expect_header
+            end
     end.
 
 handle_response(#state{body = Body, mod = ModData, headers = Headers,
-		       max_keep_alive_request = Max} = State) when Max > 0 ->
+                       max_keep_alive_request = Max} = State) when Max > 0 ->
     {NewBody, Data} = httpd_request:body_data(Headers, Body),
     ok = httpd_response:generate_and_send_response(
-	   ModData#mod{entity_body = NewBody}),
+           ModData#mod{entity_body = NewBody}),
     handle_next_request(State#state{response_sent = true}, Data);
 
-handle_response(#state{body = Body, headers = Headers, 
-		       mod = ModData} = State) ->
+handle_response(#state{body = Body, headers = Headers,
+                       mod = ModData} = State) ->
     {NewBody, _} = httpd_request:body_data(Headers, Body),
     ok = httpd_response:generate_and_send_response(
-	   ModData#mod{entity_body = NewBody}),
+           ModData#mod{entity_body = NewBody}),
     {stop, normal, State#state{response_sent = true}}.
 
 handle_next_request(#state{mod = #mod{connection = true} = ModData,
-			  max_keep_alive_request = Max} = State, Data) ->
-    NewModData = #mod{socket_type = ModData#mod.socket_type, 
- 		      socket = ModData#mod.socket, 
- 		      config_db = ModData#mod.config_db, 
- 		      init_data = ModData#mod.init_data},
+                          max_keep_alive_request = Max} = State, Data) ->
+    NewModData = #mod{socket_type = ModData#mod.socket_type,
+                      socket = ModData#mod.socket,
+                      config_db = ModData#mod.config_db,
+                      init_data = ModData#mod.init_data},
     MaxHeaderSize =
-	httpd_util:lookup(ModData#mod.config_db, 
-			  max_header_size, ?HTTP_MAX_HEADER_SIZE),
-    MaxURISize = httpd_util:lookup(ModData#mod.config_db, max_uri_size, 
-				   ?HTTP_MAX_URI_SIZE),
+        httpd_util:lookup(ModData#mod.config_db,
+                          max_header_size, ?HTTP_MAX_HEADER_SIZE),
+    MaxURISize = httpd_util:lookup(ModData#mod.config_db, max_uri_size,
+                                   ?HTTP_MAX_URI_SIZE),
     TmpState = State#state{mod = NewModData,
-			   mfa = {httpd_request, parse, [{MaxURISize, 
-							  MaxHeaderSize}]},
-			    max_keep_alive_request = decrease(Max),
-			   headers = undefined, body = undefined,
-			   response_sent = false},
-    
+                           mfa = {httpd_request, parse, [{MaxURISize,
+                                                          MaxHeaderSize}]},
+                            max_keep_alive_request = decrease(Max),
+                           headers = undefined, body = undefined,
+                           response_sent = false},
+
     NewState = activate_request_timeout(TmpState),
 
     case Data of
-	<<>> ->
-	    http_transport:setopts(ModData#mod.socket_type,
-				   ModData#mod.socket, [{active, once}]),
-	    {noreply, NewState};
-	_ ->
-	    handle_info({dummy, ModData#mod.socket, Data}, NewState)
+        <<>> ->
+            http_transport:setopts(ModData#mod.socket_type,
+                                   ModData#mod.socket, [{active, once}]),
+            {noreply, NewState};
+        _ ->
+            handle_info({dummy, ModData#mod.socket, Data}, NewState)
     end;
 
 handle_next_request(State, _) ->
@@ -510,11 +515,11 @@ cancel_request_timeout(#state{timer = undefined} = State) ->
     State;
 cancel_request_timeout(#state{timer = Timer} = State) ->
     erlang:cancel_timer(Timer),
-    receive 
-	timeout ->
-	    ok
+    receive
+        timeout ->
+            ok
     after 0 ->
-	    ok
+            ok
     end,
     State#state{timer = undefined}.
 
@@ -525,16 +530,16 @@ decrease(N) ->
 
 error_log(ReasonString, Info) ->
     Error = lists:flatten(
-	      io_lib:format("Error reading request:~s",[ReasonString])),
+              io_lib:format("Error reading request:~s",[ReasonString])),
     error_log(mod_log, Info, Error),
     error_log(mod_disk_log, Info, Error).
 
 error_log(Mod, #mod{config_db = ConfigDB} = Info, String) ->
     Modules = httpd_util:lookup(ConfigDB, modules,
-				[mod_get, mod_head, mod_log]),
+                                [mod_get, mod_head, mod_log]),
     case lists:member(Mod, Modules) of
-	true ->
-	    Mod:error_log(Info, String);
-	_ ->
-	    ok
+        true ->
+            Mod:error_log(Info, String);
+        _ ->
+            ok
     end.
