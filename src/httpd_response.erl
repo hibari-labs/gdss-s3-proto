@@ -66,13 +66,12 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
             end
     end.
 
-
 %% traverse_modules
 
 traverse_modules(ModData,[]) ->
   {proceed,ModData#mod.data};
 traverse_modules(ModData,[Module|Rest]) ->
-    case (catch apply(Module,do,[ModData])) of
+    case catch Module:do(ModData) of
         {'EXIT', Reason} ->
             String =
                 lists:flatten(
@@ -90,7 +89,6 @@ traverse_modules(ModData,[Module|Rest]) ->
     end.
 
 %% send_status %%
-
 
 send_status(ModData, 100, _PhraseArgs) ->
     send_header(ModData, 100, [{content_length, "0"}]);
@@ -138,7 +136,7 @@ send_response(ModData, Header, Body) ->
 send_header(#mod{socket_type = Type, socket = Sock,
                  http_version = Ver,  connection = Conn} = _ModData,
             StatusCode, KeyValueTupleHeaders) ->
-    Headers = create_header(lists:map(fun transform/1, KeyValueTupleHeaders)),
+    Headers = create_header([transform(V) || V <- KeyValueTupleHeaders]),
     NewVer = case {Ver, StatusCode} of
                  {[], _} ->
                      %% May be implicit!
@@ -163,13 +161,13 @@ send_header(#mod{socket_type = Type, socket = Sock,
     Head = list_to_binary([StatusLine, Headers, ConnectionHeader , ?CRLF]),
     httpd_socket:deliver(Type, Sock, Head).
 
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 2, Code > 204 ->
+map_status_code("HTTP/1.0", Code) when (Code div 100) =:= 2, Code > 204 ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 3, Code > 304 ->
+map_status_code("HTTP/1.0", Code) when (Code div 100) =:= 3, Code > 304 ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 4, Code > 404 ->
+map_status_code("HTTP/1.0", Code) when (Code div 100) =:= 4, Code > 404 ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 5, Code > 503 ->
+map_status_code("HTTP/1.0", Code) when (Code div 100) =:= 5, Code > 503 ->
     403;
 map_status_code(_, Code) ->
     Code.
@@ -177,12 +175,10 @@ map_status_code(_, Code) ->
 send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
     httpd_socket:close(Type, Socket),
     ok;
-
 send_body(#mod{socket_type = Type, socket = Sock},
           _StatusCode, Body) when is_list(Body) ->
     ok = httpd_socket:deliver(Type, Sock, Body);
-
-send_body(#mod{socket_type = Type, socket = Sock} = ModData,
+send_body(#mod{socket_type = Type, socket = Sock, data = Data},
           StatusCode, {Fun, Args}) ->
     case (catch apply(Fun, Args)) of
         close ->
@@ -191,15 +187,13 @@ send_body(#mod{socket_type = Type, socket = Sock} = ModData,
 
         sent ->
             {proceed,[{response,{already_sent, StatusCode,
-                                 proplists:get_value(content_length,
-                                                     ModData#mod.data)}}]};
+                                 proplists:get_value(content_length, Data)}}]};
         {ok, Body} ->
             case httpd_socket:deliver(Type, Sock, Body) of
                 ok ->
                     {proceed,[{response,
                                {already_sent, StatusCode,
-                                proplists:get_value(content_length,
-                                                    ModData#mod.data)}}]};
+                                proplists:get_value(content_length, Data)}}]};
                 _ ->
                     done
             end;
@@ -262,14 +256,13 @@ create_header(KeyValueTupleHeaders) ->
                                       {"content-type", "text/html"},
                                       {"server", ?SERVER_SOFTWARE}],
                                      KeyValueTupleHeaders),
-    lists:map(fun fix_header/1, NewHeaders).
+    [fix_header(H) || H <- NewHeaders].
 
 fix_header({Key0, Value}) ->
     %% make sure first letter is capital, unless begins with x-
     Words1 = string:tokens(Key0, "-"),
     Words2 = upify(Words1, []),
     Key    = new_key(Words2),
-
     case string:str(Key, "X-") of
         1 ->
             Key0 ++ ": " ++ Value ++ ?CRLF;
@@ -298,12 +291,11 @@ upify2(Str) ->
 
 add_default_headers([], Headers) ->
     Headers;
-
 add_default_headers([Header = {Default, _} | Defaults], Headers) ->
-    case lists:keysearch(Default, 1, Headers) of
-        {value, _} ->
+    case lists:keymember(Default, 1, Headers) of
+        true ->
             add_default_headers(Defaults, Headers);
-        _ ->
+        false ->
             add_default_headers(Defaults, [Header | Headers])
     end.
 
@@ -333,8 +325,8 @@ transform({last_modified, Value}) ->
     {"last-modified", Value};
 transform({Field, Value}) when is_atom(Field) ->
     {atom_to_list(Field), Value};
-transform({Field, Value}) when is_list(Field) ->
-    {Field, Value}.
+transform({Field,_Value} = FV) when is_list(Field) ->
+    FV.
 
 %%----------------------------------------------------------------------
 %% This is the old way of sending data it is strongly encouraged to
@@ -347,12 +339,12 @@ send_response_old(#mod{method      = "HEAD"} = ModData,
 
     case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF],2) of
         {ok, [Head, Body]} ->
-            {ok, NewHead} = handle_headers(string:tokens(Head, [?CR,?LF]), []),
-            send_header(ModData, StatusCode, [{content_length,
-                                            content_length(Body)} | NewHead]);
+            NewHeaders = handle_headers(string:tokens(Head, [?CR,?LF])),
+            send_header(ModData, StatusCode,
+			[{content_length, content_length(Body)} | NewHeaders]);
         {ok, [NewResponse]} ->
-            send_header(ModData, StatusCode, [{content_length,
-                                               content_length(NewResponse)}]);
+            send_header(ModData, StatusCode,
+			[{content_length, content_length(NewResponse)}]);
         _Error ->
             send_status(ModData, 500, "Internal Server Error")
     end;
@@ -360,22 +352,17 @@ send_response_old(#mod{method      = "HEAD"} = ModData,
 send_response_old(#mod{socket_type = Type,
                        socket      = Sock} = ModData,
                   StatusCode, Response) ->
-
     NewResponse = lists:flatten(Response),
-
     case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF], 2) of
         {ok, [Head, Body]} ->
-            {ok, NewHead} = handle_headers(string:tokens(Head,
-                                                         [?CR,?LF]), []),
-            send_header(ModData, StatusCode, [{content_length,
-                                               content_length(Body)} |
-                                              NewHead]),
+            NewHeaders = handle_headers(string:tokens(Head, [?CR,?LF])),
+            send_header(ModData, StatusCode,
+			[{content_length, content_length(Body)} | NewHeaders]),
             httpd_socket:deliver(Type, Sock, Body);
         {ok, [NewResponse]} ->
-            send_header(ModData, StatusCode, [{content_length,
-                                               content_length(NewResponse)}]),
+            send_header(ModData, StatusCode,
+			[{content_length, content_length(NewResponse)}]),
             httpd_socket:deliver(Type, Sock, NewResponse);
-
         {error, _Reason} ->
             send_status(ModData, 500, "Internal Server Error")
     end.
@@ -393,11 +380,6 @@ report_error(Mod, ConfigDB, Error) ->
             ok
     end.
 
-handle_headers([], NewHeaders) ->
-    {ok, NewHeaders};
-
-handle_headers([Header | Headers], NewHeaders) ->
-    {FieldName, FieldValue} = split_header(Header, []),
-    handle_headers(Headers,
-                   [{FieldName, FieldValue}| NewHeaders]).
+handle_headers(Headers) ->
+    [split_header(Hdr, []) || Hdr <- Headers].
 

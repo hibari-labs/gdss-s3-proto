@@ -180,7 +180,7 @@ do_head(ModData, _Path, _QS, Bucket, Key) ->
             CType = binary_to_list(proplists:get_value('content-type', FlagData, <<"binary/octet-stream">>)),
             ETag = binary_to_hexlist(proplists:get_value(etag, FlagData, <<"">>)),
             XAmz = [{atom_to_list(K), binary_to_list(V)} || {K, V} <- FlagData,
-                                                            string:str(atom_to_list(K), "x-amz-") == 1],
+                                                            string:str(atom_to_list(K), "x-amz-") =:= 1],
 
             Headers = [{"timestamp", integer_to_list(Ts)},
                        {"content-length", integer_to_list(Vs)},
@@ -200,20 +200,20 @@ do_head(ModData, _Path, _QS, Bucket, Key) ->
 %% @spec (mod()) -> {proceed, binary()} | {break, binary()} | done
 %% @doc Handle all PUT requests.
 do_put(ModData, _Path, QS, Bucket, Key) ->
-    if
-        length(Key) > 0 ->
+    case Key of
+	[_|_] ->
             put_object(Bucket, Key, ModData#mod.entity_body, QS, ModData);
-        true ->
+        [] ->
             put_bucket(Bucket, QS, ModData)
     end.
 
 %% @spec (mod()) -> {proceed, binary()} | {break, binary()} | done
 %% @doc Handle all DELETE requests.
 do_delete(ModData, _Path, _QS, Bucket, Key) ->
-    if
-        length(Key) > 0 ->
+    case Key of
+	[_|_] ->
             delete_object(Bucket, Key, ModData);
-        true ->
+        [] ->
             delete_bucket(Bucket, ModData)
     end.
 
@@ -337,7 +337,7 @@ get_bucket(Bucket, QS, ModData) ->
                     || {BucketKey, Ts, Flags} <- Data,
                        <<_KeyBase:Size/binary, Key/binary>> <= BucketKey,
                        size(Key) > 0,
-                       (Prefix == Base andalso PPrefix /= true) orelse has_delimiter(Key, Delimiter) == false ],
+                       (Prefix =:= Base andalso PPrefix =/= true) orelse has_delimiter(Key, Delimiter) =:= false ],
 
     Xml = [XmlHead, XmlContents, XmlTail],
 
@@ -395,7 +395,7 @@ get_service(_QS, ModData) ->
     {_Ts, Data} = load_table_from_brick(?S3_BUCKET_TABLE),
     XmlBuckets = [ [<<"    <Bucket><Name>">>, Bucket, <<"</Name><CreationDate>">>, Date, <<"</CreationDate></Bucket>\r\n">>] ||
                      {Bucket, {ID, Date}} <- Data,
-                     ID == Key],
+                     ID =:= Key],
 
     Xml = [XmlHead, XmlOwner, XmlMid, XmlBuckets, XmlTail],
 
@@ -419,7 +419,7 @@ put_object(Bucket, Key, Val, _QS, ModData) ->
         end,
 
     XAmz = [{list_to_atom(K), list_to_binary(V)} || {K, V} <- ModData#mod.parsed_header,
-                                                    string:str(K, "x-amz-") == 1],
+                                                    string:str(K, "x-amz-") =:= 1],
 
     Flags = [{flagdata, ET ++ CT ++ XAmz}],
     ok = brick_simple:set(?S3_TABLE, make_brick_key(Bucket, Key), Val, 0, Flags, ?S3_TIMEOUT),
@@ -598,7 +598,7 @@ make_base_key(Bucket) ->
 %% @spec (string(), string(), mod()) -> iolist()
 %% @doc Make an S3 authorization string.
 make_auth(KeyID, Key, ModData) ->
-    AmzHeaders = orddict:to_list(orddict:from_list([{Name, Value} || {Name, Value} <- ModData#mod.parsed_header, string:substr(Name, 1, 6) == "x-amz-"])),
+    AmzHeaders = orddict:to_list(orddict:from_list([NV || {Name,_Value} = NV <- ModData#mod.parsed_header, string:substr(Name, 1, 6) =:= "x-amz-"])),
     Uri = ModData#mod.request_uri,
     Resource =
         case string:tokens(Uri, "?") of
@@ -644,7 +644,7 @@ check_auth(ModData) ->
             [{_, {_Name, HexKey}}] = ets:lookup(?S3_USER_TABLE, list_to_integer(KeyID)),
             MakeAuth = iolist_to_binary(make_auth(KeyID, HexKey, ModData)),
             if
-                MakeAuth == ModAuth ->
+                MakeAuth =:= ModAuth ->
                     ok
             end
     end.
@@ -830,22 +830,20 @@ integer_to_binary(Int) ->
 %% @spec (integer(), integer()) -> binary()
 %% @doc Convert the passed integer to an N-bit binary.
 integer_to_binary(Int, N) ->
-    Bin = <<Int:N>>,
-    Bin.
+    <<Int:N>>.
 
 %% @spec (string()) -> binary()
 %% @doc Convert the passed hexadecimal string to a binary.
 hexlist_to_binary(Hex) ->
     Int = erlang:list_to_integer(Hex, 16),
-    Bin = integer_to_binary(Int),
-    Bin.
+    integer_to_binary(Int).
 
-key1search(TupleList,Key) ->
-    key1search(TupleList,Key,undefined).
+key1search(TupleList, Key) ->
+    key1search(TupleList, Key, undefined).
 
-key1search(TupleList,Key,Undefined) ->
-    case lists:keysearch(Key,1,TupleList) of
-        {value,{Key,Value}} ->
+key1search(TupleList, Key, Undefined) ->
+    case lists:keyfind(Key, 1, TupleList) of
+        {Key, Value} ->
             Value;
         false ->
             Undefined

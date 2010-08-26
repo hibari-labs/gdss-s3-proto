@@ -366,12 +366,11 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
     case Headers#http_request_h.'transfer-encoding' of
         "chunked" ->
             case http_chunk:decode(Body, MaxBodySize, MaxHeaderSize) of
-                {Module, Function, Args} ->
+                {_Module, _Function, _Args} = MFArgs ->
                     http_transport:setopts(ModData#mod.socket_type,
                                            ModData#mod.socket,
                                            [{active, once}]),
-                    {noreply, State#state{mfa =
-                                          {Module, Function, Args}}};
+                    {noreply, State#state{mfa = MFArgs}};
                 {ok, {ChunkedHeaders, NewBody}} ->
                     NewHeaders =
                         http_chunk:handle_headers(Headers, ChunkedHeaders),
@@ -391,12 +390,11 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
             case ((Length =< MaxBodySize) or (MaxBodySize == nolimit)) of
                 true ->
                     case httpd_request:whole_body(Body, Length) of
-                        {Module, Function, Args} ->
+                        {_Module, _Function, _Args} = MFArgs ->
                             http_transport:setopts(ModData#mod.socket_type,
                                                    ModData#mod.socket,
                                                    [{active, once}]),
-                            {noreply, State#state{mfa =
-                                                  {Module, Function, Args}}};
+                            {noreply, State#state{mfa = MFArgs}};
 
                         {ok, NewBody} ->
                             handle_response(
@@ -410,11 +408,12 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
             end
     end.
 
-handle_expect(#state{headers = Headers, mod =
-                     #mod{config_db = ConfigDB} = ModData} = State,
+handle_expect(#state{headers = Headers,
+		     mod = #mod{config_db = ConfigDB,
+				http_version = Version} = ModData} = State,
               MaxBodySize) ->
     Length = Headers#http_request_h.'content-length',
-    case expect(Headers, ModData#mod.http_version, ConfigDB) of
+    case expect(Headers, Version, ConfigDB) of
         continue when MaxBodySize > Length; MaxBodySize == nolimit ->
             httpd_response:send_status(ModData, 100, ""),
             ok;

@@ -40,10 +40,8 @@
 start(_Type, StartArgs) ->
     _ = application:start(inets),
     case gdss_s3_proto_sup:start_link(StartArgs) of
-        {ok, Pid} ->
-            {ok, Pid};
-        Error ->
-            Error
+        {ok, _Pid} = Ok -> Ok;
+        Error -> Error
     end.
 
 %%--------------------------------------------------------------------
