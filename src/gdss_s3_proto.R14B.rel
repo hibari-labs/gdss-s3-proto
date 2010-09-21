@@ -19,12 +19,12 @@
 
 {release,
  {"gdss-s3-proto", "0.01"},
- {erts, "5.8"},
+ {erts, "5.8.1"},
  [
-  {kernel, "2.14"},
-  {stdlib, "1.17"},
+  {kernel, "2.14.1"},
+  {stdlib, "1.17.1"},
   {sasl, "2.1.9.2"},
-  {inets, "5.4"},
+  {inets, "5.5"},
 
   {gdss_s3_proto, "0.01"}
  ]
