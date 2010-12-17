@@ -46,9 +46,13 @@
 
 -ifdef(new_inets).
 -include_lib("inets/src/http_server/httpd.hrl").
+-ifndef(NICE).
+-define(NICE(Reason),lists:flatten(atom_to_list(?MODULE)++": "++Reason)).
+-endif.
 -else.
 -include_lib("inets/src/httpd.hrl").
 -endif.
+
 -define(VMODULE,"S3").
 -define(DEFAULT_S3_CHECK_AUTH, true).
 -define(DEFAULT_S3_ENFORCE_AUTH, true).

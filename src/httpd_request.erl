@@ -22,6 +22,25 @@
 -ifdef(new_inets).
 -include_lib("inets/src/http_lib/http_internal.hrl").
 -include_lib("inets/src/http_server/httpd.hrl").
+
+-ifndef(DEBUG).
+-ifdef(inets_debug).
+-define(DEBUG(Format, Args), io:format("D(~p:~p:~p) : "++Format++"~n",
+                                       [self(),?MODULE,?LINE]++Args)).
+-else.
+-define(DEBUG(F,A),[]).
+-endif.
+-endif.
+
+-ifndef(DEBUG).
+-ifdef(inets_cdebug).
+-define(CDEBUG(Format, Args), io:format("C(~p:~p:~p) : "++Format++"~n",
+                                       [self(),?MODULE,?LINE]++Args)).
+-else.
+-define(CDEBUG(F,A),[]).
+-endif.
+-endif.
+
 -else.
 -include_lib("inets/src/http_internal.hrl").
 -include_lib("inets/src/httpd.hrl").
