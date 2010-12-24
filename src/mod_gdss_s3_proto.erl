@@ -103,8 +103,6 @@ do(ModData) ->
 
                         {Bucket, Key} = split_uri(Path, $/, 2),
 
-                        error_logger:error_msg("~s:do: ~s ~s ~p -> {~s, ~s}\n", [?MODULE, ModData#mod.method, Uri, ModData#mod.parsed_header, Bucket, Key]),
-
                         case ModData#mod.method of
                             "GET" ->
                                 do_get(ModData, Path, QS, Bucket, Key);
@@ -335,7 +333,6 @@ get_bucket(Bucket, QS, ModData) ->
     Size = size(Prefix),
 
     {ok, {Data, _More}} = brick_simple:get_many(?S3_TABLE, Prefix, MaxKeys, [witness, get_all_attribs, {binary_prefix, Prefix}]),
-    %%error_logger:error_msg("~s:get_bucket: get_many(tab1, ~p, ~b, [{binary_prefix, ~p}]) -> {ok, ~p, ~p}\n", [?MODULE, Base, MaxKeys, Prefix, Data, More]),
 
     XmlContents = [ [ <<"  <Contents>\r\n">>, <<"    <Key>">>, Key, <<"</Key>\r\n">>, <<"    <LastModified>">>, make_date(Ts), <<"</LastModified>\r\n">>, <<"    <Size>">>, integer_to_list(proplists:get_value(val_len, Flags, 0)), <<"</Size>\r\n">>, XmlOwner, <<"  </Contents>\r\n">> ]
                     || {BucketKey, Ts, Flags} <- Data,

@@ -57,7 +57,7 @@ init(_Args) ->
     %% Child_spec = [Name, {M, F, A},
     %%               Restart, Shutdown_time, Type, Modules_used]
 
-    {ok, S3Conf} = gmt_config_svr:get_config_value(brick_s3_conf_path, ""),
+    {ok, S3Conf} = application:get_env(gdss_s3_proto, brick_s3_conf_path),
     if S3Conf /= "" ->
             httpd_sup:init([[{httpd, S3Conf}]]);
        true ->

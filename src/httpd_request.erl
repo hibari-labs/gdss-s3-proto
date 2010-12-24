@@ -101,7 +101,6 @@ body_data(Headers, Body) ->
 %% Description: Checks that HTTP-request-line is valid.
 %%-------------------------------------------------------------------------
 validate(X, Y, Z) ->
-    %% error_logger:info_msg("QQQ: ~p ~p ~p [...]\n", [X, Y, Z]),
     validate0(X, Y, Z).
 validate0("HEAD", Uri, "HTTP/1." ++ _N) ->
     validate_uri(Uri);

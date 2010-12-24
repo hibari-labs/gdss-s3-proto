@@ -32,6 +32,7 @@
              , httpd_request_handler
              , httpd_response
              , mod_gdss_s3_proto
-            ]}
- ]
-}.
+            ]},
+  {env, [{brick_s3_conf_path, ""}
+        ]}
+ ]}.
