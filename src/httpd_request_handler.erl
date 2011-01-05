@@ -248,7 +248,7 @@ terminate(_, State) ->
 
 do_terminate(#state{mod = ModData, manager = Manager} = State) ->
     catch httpd_manager:done_connection(Manager),
-    cancel_request_timeout(State),
+    _ = cancel_request_timeout(State),
     httpd_socket:close(ModData#mod.socket_type, ModData#mod.socket).
 
 %%--------------------------------------------------------------------
@@ -272,14 +272,14 @@ await_socket_ownership_transfer(AcceptTimeout) ->
 
 handle_http_msg({_, _, Version, {_, _}, _}, #state{status = busy,
                                                    mod = ModData} = State) ->
-    handle_manager_busy(State#state{mod =
-                                    ModData#mod{http_version = Version}}),
+    _ = handle_manager_busy(State#state{mod =
+                                            ModData#mod{http_version = Version}}),
     {stop, normal, State};
 
 handle_http_msg({_, _, Version, {_, _}, _},
                 #state{status = blocked, mod = ModData} = State) ->
-    handle_manager_blocked(State#state{mod =
-                                       ModData#mod{http_version = Version}}),
+    _ = handle_manager_blocked(State#state{mod =
+                                               ModData#mod{http_version = Version}}),
     {stop, normal, State};
 
 handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
@@ -513,7 +513,7 @@ activate_request_timeout(#state{timeout = Time} = State) ->
 cancel_request_timeout(#state{timer = undefined} = State) ->
     State;
 cancel_request_timeout(#state{timer = Timer} = State) ->
-    erlang:cancel_timer(Timer),
+    _ = erlang:cancel_timer(Timer),
     receive
         timeout ->
             ok

@@ -59,7 +59,7 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
                         {already_sent, _StatusCode, _Size} ->
                             ok;
                         {response, Header, Body} -> %% New way
-                            send_response(ModData, Header, Body),
+                            _ = send_response(ModData, Header, Body),
                             ok;
                         {StatusCode, Response} ->   %% Old way
                             send_response_old(ModData, StatusCode, Response),
@@ -178,7 +178,7 @@ map_status_code(_, Code) ->
     Code.
 
 send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
-    httpd_socket:close(Type, Socket),
+    ok = httpd_socket:close(Type, Socket),
     ok;
 send_body(#mod{socket_type = Type, socket = Sock},
           _StatusCode, Body) when is_list(Body) ->
@@ -187,7 +187,7 @@ send_body(#mod{socket_type = Type, socket = Sock, data = Data},
           StatusCode, {Fun, Args}) ->
     case (catch apply(Fun, Args)) of
         close ->
-            httpd_socket:close(Type, Sock),
+            ok = httpd_socket:close(Type, Sock),
             done;
 
         sent ->

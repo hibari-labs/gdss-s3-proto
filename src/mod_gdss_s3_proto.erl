@@ -355,7 +355,7 @@ load_table_from_brick(Table) ->
         {ok, Ts, Val} ->
             {Ts, binary_to_term(Val)};
         key_not_exist ->
-            brick_simple:set(?S3_TABLE, make_table_key(Table), term_to_binary([]), ?S3_TIMEOUT),
+            _ = brick_simple:set(?S3_TABLE, make_table_key(Table), term_to_binary([]), ?S3_TIMEOUT),
             load_table_from_brick(Table)
     end.
 
@@ -461,9 +461,9 @@ delete_bucket(Bucket, ModData) ->
     Base = make_base_key(Bucket),
     Size = size(Base),
     {ok, {Data, _More}} = brick_simple:get_many(?S3_TABLE, Base, ?S3_MAX_KEYS, [witness, {binary_prefix, Base}]),
-    [ok = brick_simple:delete(?S3_TABLE, Key, ?S3_TIMEOUT)
-     || {BucketKey, _Ts, _Val, _Opts, _Flags} <- Data,
-        <<_KeyBase:Size/binary, Key/binary>> <= BucketKey],
+    _ = [ok = brick_simple:delete(?S3_TABLE, Key, ?S3_TIMEOUT)
+         || {BucketKey, _Ts, _Val, _Opts, _Flags} <- Data,
+            <<_KeyBase:Size/binary, Key/binary>> <= BucketKey],
 
     httpd_response:send_header(ModData, 204, []),
     %% httpd_response:send_final_chunk(ModData, true),
@@ -496,7 +496,7 @@ srand() ->
 add_user(Name, ModData) ->
     %% KeySize > 64 seems problematic
     KeySize = 64,
-    srand(),
+    _ = srand(),
     Rand = random:uniform(pow(2, KeySize)),
     BKey = <<Rand:KeySize>>,
     XKey = binary_to_hexlist(BKey),
@@ -512,7 +512,8 @@ add_user(Name, ModData) ->
 load_table(Table) ->
     case ets:info(Table) of
         undefined ->
-            ets:new(Table, [named_table, ordered_set, public]);
+            _ = ets:new(Table, [named_table, ordered_set, public]),
+            ok;
         _Ret ->
             ok
     end,
