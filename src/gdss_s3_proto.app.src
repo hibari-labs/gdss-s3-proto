@@ -24,7 +24,7 @@
   {description, "Gemini Distributed Storage Service S3 Protocol Server"},
   {vsn, "0.1.0"},
   {registered, []},
-  {applications, [kernel, stdlib, sasl, gdss, inets]},
+  {applications, [kernel, stdlib, sasl, gdss_client, inets]},
   {mod, {gdss_s3_proto, []}},
   {modules, [gdss_s3_proto
              , gdss_s3_proto_sup
