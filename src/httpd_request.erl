@@ -19,7 +19,10 @@
 
 -module(httpd_request).
 
--ifdef(new_inets).
+-ifdef(old_inets).
+-include_lib("inets/src/http_internal.hrl").
+-include_lib("inets/src/httpd.hrl").
+-else.
 -include_lib("inets/src/http_lib/http_internal.hrl").
 -include_lib("inets/src/http_server/httpd.hrl").
 
@@ -40,10 +43,6 @@
 -define(CDEBUG(F,A),[]).
 -endif.
 -endif.
-
--else.
--include_lib("inets/src/http_internal.hrl").
--include_lib("inets/src/httpd.hrl").
 -endif.
 
 -export([parse/1, whole_body/2, validate/3, update_mod_data/5,

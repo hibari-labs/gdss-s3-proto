@@ -23,17 +23,16 @@
          is_disable_chunked_send/1, cache_headers/1]).
 -export([map_status_code/2]).
 
--ifdef(new_inets).
+-ifdef(old_inets).
+-include_lib("inets/src/http_internal.hrl").
+-include_lib("inets/src/httpd.hrl").
+-else.
 -include_lib("inets/src/http_lib/http_internal.hrl").
 -include_lib("inets/src/http_server/httpd.hrl").
 
 -ifndef(SERVER_SOFTWARE).
 -define(SERVER_SOFTWARE,"inets/develop").       % Define in Makefile!
 -endif.
-
--else.
--include_lib("inets/src/http_internal.hrl").
--include_lib("inets/src/httpd.hrl").
 -endif.
 
 -define(VMODULE,"RESPONSE").

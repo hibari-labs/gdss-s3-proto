@@ -31,12 +31,12 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--ifdef(new_inets).
--include_lib("inets/src/http_lib/http_internal.hrl").
--include_lib("inets/src/http_server/httpd.hrl").
--else.
+-ifdef(old_inets).
 -include_lib("inets/src/http_internal.hrl").
 -include_lib("inets/src/httpd.hrl").
+-else.
+-include_lib("inets/src/http_lib/http_internal.hrl").
+-include_lib("inets/src/http_server/httpd.hrl").
 -endif.
 
 -record(state, {mod,     %% #mod{}
