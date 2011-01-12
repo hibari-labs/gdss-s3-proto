@@ -35,4 +35,9 @@
             ]},
   {env, [{brick_s3_conf_path, ""}
         ]}
+  %%
+  %% brick_s3_conf_path
+  %%   If brick_s3_conf_path option is not present, S3 listener will
+  %%   not run.
+  %%
  ]}.
