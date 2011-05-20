@@ -20,7 +20,7 @@
 %% Description: Implements a request handler process for the HTTP server.
 %%
 
--module(httpd_request_handler).
+-module(gdss_s3_httpd_request_handler).
 
 -behaviour(gen_server).
 
@@ -91,7 +91,7 @@ init([Manager, ConfigDB,AcceptTimeout]) ->
     %% Make sure this process terminates if the httpd manager process
     %% should die!
     link(Manager),
-    %% At this point the function httpd_request_handler:start/2 will return.
+    %% At this point the function gdss_s3_httpd_request_handler:start/2 will return.
     proc_lib:init_ack({ok, self()}),
 
     {SocketType, Socket} = await_socket_ownership_transfer(AcceptTimeout),
@@ -129,7 +129,7 @@ continue_init(Manager, ConfigDB, SocketType, Socket, TimeOut) ->
 
     State = #state{mod = Mod, manager = Manager, status = Status,
                    timeout = TimeOut, max_keep_alive_request = NrOfRequest,
-                   mfa = {httpd_request, parse, [{MaxURISize,
+                   mfa = {gdss_s3_httpd_request, parse, [{MaxURISize,
                                                   MaxHeaderSize}]}},
 
     NewState = activate_request_timeout(State),
@@ -181,7 +181,7 @@ handle_info({Proto, Socket, Data}, State =
             handle_http_msg(Result, NewState);
         {error, {uri_too_long, MaxSize}, Version} ->
             NewModData =  ModData#mod{http_version = Version},
-            httpd_response:send_status(NewModData, 414, "URI too long"),
+            gdss_s3_httpd_response:send_status(NewModData, 414, "URI too long"),
             Reason = io_lib:format("Uri too long, max size is ~p~n",
                                    [MaxSize]),
             error_log(Reason, NewModData),
@@ -189,7 +189,7 @@ handle_info({Proto, Socket, Data}, State =
                                        mod = NewModData}};
         {error, {header_too_long, MaxSize}, Version} ->
             NewModData =  ModData#mod{http_version = Version},
-            httpd_response:send_status(NewModData, 413, "Header too long"),
+            gdss_s3_httpd_response:send_status(NewModData, 413, "Header too long"),
             Reason = io_lib:format("Header too long, max size is ~p~n",
                                    [MaxSize]),
             error_log(Reason, NewModData),
@@ -217,7 +217,7 @@ handle_info(timeout, #state{mod = ModData, mfa = {_, parse, _}} = State) ->
     %% No response should be sent!
     {stop, normal, State#state{response_sent = true}};
 handle_info(timeout, #state{mod = ModData} = State) ->
-    httpd_response:send_status(ModData, 408, "Request timeout"),
+    gdss_s3_httpd_response:send_status(ModData, 408, "Request timeout"),
     error_log("The client did not send the whole request before the"
               "server side timeout", ModData),
     {stop, normal, State#state{response_sent = true}};
@@ -240,7 +240,7 @@ handle_info(Info, #state{mod = ModData} = State) ->
 terminate(normal, State) ->
     do_terminate(State);
 terminate(Reason, #state{response_sent = false, mod = ModData} = State) ->
-    httpd_response:send_status(ModData, 500, none),
+    gdss_s3_httpd_response:send_status(ModData, 500, none),
     error_log(httpd_util:reason_phrase(500), ModData),
     terminate(Reason, State#state{response_sent = true, mod = ModData});
 terminate(_, State) ->
@@ -284,10 +284,10 @@ handle_http_msg({_, _, Version, {_, _}, _},
 
 handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
                 #state{status = accept, mod = ModData} = State) ->
-    case httpd_request:validate(Method, Uri, Version) of
+    case gdss_s3_httpd_request:validate(Method, Uri, Version) of
         ok  ->
             {ok, NewModData} =
-                httpd_request:update_mod_data(ModData, Method, Uri,
+                gdss_s3_httpd_request:update_mod_data(ModData, Method, Uri,
                                               Version, Headers),
 
             case is_host_specified_if_required(NewModData#mod.absolute_uri,
@@ -297,25 +297,25 @@ handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
                                             body = Body,
                                             mod = NewModData});
                 false ->
-                    httpd_response:send_status(ModData#mod{http_version =
+                    gdss_s3_httpd_response:send_status(ModData#mod{http_version =
                                                            Version},
                                                400, none),
                     {stop, normal, State#state{response_sent = true}}
             end;
         {error, {not_supported, What}} ->
-            httpd_response:send_status(ModData#mod{http_version = Version},
+            gdss_s3_httpd_response:send_status(ModData#mod{http_version = Version},
                                        501, {Method, Uri, Version}),
             Reason = io_lib:format("Not supported: ~p~n", [What]),
             error_log(Reason, ModData),
             {stop, normal, State#state{response_sent = true}};
         {error, {bad_request, {forbidden, URI}}} ->
-            httpd_response:send_status(ModData#mod{http_version = Version},
+            gdss_s3_httpd_response:send_status(ModData#mod{http_version = Version},
                                        403, URI),
             Reason = io_lib:format("Forbidden URI: ~p~n", [URI]),
             error_log(Reason, ModData),
             {stop, normal, State#state{response_sent = true}};
         {error,{bad_request, {malformed_syntax, URI}}} ->
-            httpd_response:send_status(ModData#mod{http_version = Version},
+            gdss_s3_httpd_response:send_status(ModData#mod{http_version = Version},
                                        400, URI),
             Reason = io_lib:format("Malformed syntax in URI: ~p~n", [URI]),
             error_log(Reason, ModData),
@@ -338,7 +338,7 @@ handle_manager_blocked(State) ->
     reject_connection(State, Reason).
 
 reject_connection(#state{mod = ModData} = State, Reason) ->
-    httpd_response:send_status(ModData, 503, Reason),
+    gdss_s3_httpd_response:send_status(ModData, 503, Reason),
     {stop, normal, State#state{response_sent = true}}.
 
 is_host_specified_if_required(nohost, #http_request_h{host = undefined},
@@ -378,7 +378,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
                                                 body = NewBody})
             end;
         Encoding when is_list(Encoding) ->
-            httpd_response:send_status(ModData, 501,
+            gdss_s3_httpd_response:send_status(ModData, 501,
                                        "Unknown Transfer-Encoding"),
             Reason = io_lib:format("Unknown Transfer-Encoding: ~p~n",
                                    [Encoding]),
@@ -389,7 +389,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
                 list_to_integer(Headers#http_request_h.'content-length'),
             case ((Length =< MaxBodySize) or (MaxBodySize == nolimit)) of
                 true ->
-                    case httpd_request:whole_body(Body, Length) of
+                    case gdss_s3_httpd_request:whole_body(Body, Length) of
                         {_Module, _Function, _Args} = MFArgs ->
                             http_transport:setopts(ModData#mod.socket_type,
                                                    ModData#mod.socket,
@@ -402,7 +402,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
                                           body = NewBody})
                     end;
                 false ->
-                    httpd_response:send_status(ModData, 413, "Body too long"),
+                    gdss_s3_httpd_response:send_status(ModData, 413, "Body too long"),
                     error_log("Body too long", ModData),
                     {stop, normal,  State#state{response_sent = true}}
             end
@@ -415,14 +415,14 @@ handle_expect(#state{headers = Headers,
     Length = Headers#http_request_h.'content-length',
     case expect(Headers, Version, ConfigDB) of
         continue when MaxBodySize > Length; MaxBodySize == nolimit ->
-            httpd_response:send_status(ModData, 100, ""),
+            gdss_s3_httpd_response:send_status(ModData, 100, ""),
             ok;
         continue when MaxBodySize < Length ->
-            httpd_response:send_status(ModData, 413, "Body too long"),
+            gdss_s3_httpd_response:send_status(ModData, 413, "Body too long"),
             error_log("Body too long", ModData),
             {stop, normal, State#state{response_sent = true}};
         {break, Value} ->
-            httpd_response:send_status(ModData, 417,
+            gdss_s3_httpd_response:send_status(ModData, 417,
                                        "Unexpected expect value"),
             Reason = io_lib:format("Unexpected expect value: ~p~n", [Value]),
             error_log(Reason, ModData),
@@ -430,7 +430,7 @@ handle_expect(#state{headers = Headers,
         no_expect_header ->
             ok;
         http_1_0_expect_header ->
-            httpd_response:send_status(ModData, 400,
+            gdss_s3_httpd_response:send_status(ModData, 400,
                                        "Only HTTP/1.1 Clients "
                                        "may use the Expect Header"),
             error_log("Client with lower version than 1.1 tried to send"
@@ -462,15 +462,15 @@ expect(Headers, _, ConfigDB) ->
 
 handle_response(#state{body = Body, mod = ModData, headers = Headers,
                        max_keep_alive_request = Max} = State) when Max > 0 ->
-    {NewBody, Data} = httpd_request:body_data(Headers, Body),
-    ok = httpd_response:generate_and_send_response(
+    {NewBody, Data} = gdss_s3_httpd_request:body_data(Headers, Body),
+    ok = gdss_s3_httpd_response:generate_and_send_response(
            ModData#mod{entity_body = NewBody}),
     handle_next_request(State#state{response_sent = true}, Data);
 
 handle_response(#state{body = Body, headers = Headers,
                        mod = ModData} = State) ->
-    {NewBody, _} = httpd_request:body_data(Headers, Body),
-    ok = httpd_response:generate_and_send_response(
+    {NewBody, _} = gdss_s3_httpd_request:body_data(Headers, Body),
+    ok = gdss_s3_httpd_response:generate_and_send_response(
            ModData#mod{entity_body = NewBody}),
     {stop, normal, State#state{response_sent = true}}.
 
@@ -486,7 +486,7 @@ handle_next_request(#state{mod = #mod{connection = true} = ModData,
     MaxURISize = httpd_util:lookup(ModData#mod.config_db, max_uri_size,
                                    ?HTTP_MAX_URI_SIZE),
     TmpState = State#state{mod = NewModData,
-                           mfa = {httpd_request, parse, [{MaxURISize,
+                           mfa = {gdss_s3_httpd_request, parse, [{MaxURISize,
                                                           MaxHeaderSize}]},
                             max_keep_alive_request = decrease(Max),
                            headers = undefined, body = undefined,

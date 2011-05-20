@@ -17,7 +17,7 @@
 %% The Initial Developer of the Original Code is Ericsson AB.
 %%</legalnotice>
 %%
--module(httpd_response).
+-module(gdss_s3_httpd_response).
 -export([generate_and_send_response/1, send_status/3, send_header/3,
          send_body/3, send_chunk/3, send_final_chunk/2, split_header/2,
          is_disable_chunked_send/1, cache_headers/1]).

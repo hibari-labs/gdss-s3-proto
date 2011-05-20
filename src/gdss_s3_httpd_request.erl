@@ -17,7 +17,7 @@
 %% The Initial Developer of the Original Code is Ericsson AB.
 %%</legalnotice>
 
--module(httpd_request).
+-module(gdss_s3_httpd_request).
 
 -ifdef(old_inets).
 -include_lib("inets/src/http_internal.hrl").

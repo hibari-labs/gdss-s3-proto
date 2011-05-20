@@ -191,9 +191,9 @@ do_head(ModData, _Path, _QS, Bucket, Key) ->
                        {"last-modified", make_date(Ts)},
                        {"ETag", ETag}] ++ XAmz,
 
-            httpd_response:send_header(ModData, 200, Headers),
+            gdss_s3_httpd_response:send_header(ModData, 200, Headers),
 
-            %% httpd_response:send_final_chunk(ModData, true),
+            %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
             {proceed, [{response, {already_sent, 200, 0}} | ModData#mod.data]};
         key_not_exist ->
@@ -244,9 +244,9 @@ write_error(StatusCode, Code, Message, ModData) ->
 <<"  <RequestId>">>, ReqID, <<"</RequestId>\r\n">>,
 <<"</Error>\r\n">>],
 
-    httpd_response:send_header(ModData, StatusCode, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Msg))}]),
-    httpd_response:send_chunk(ModData, Msg, true),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, StatusCode, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Msg))}]),
+    gdss_s3_httpd_response:send_chunk(ModData, Msg, true),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, StatusCode, 0}} | ModData#mod.data]}.
 
@@ -257,9 +257,9 @@ get_object(Bucket, Key, _QS, ModData) ->
         {ok, Ts, Val} ->
             Vs = size(Val),
 
-            httpd_response:send_header(ModData, 200, [{"timestamp", integer_to_list(Ts)}, {"content-length", integer_to_list(Vs)}, {"content-type", "binary/octet-stream"}]),
-            httpd_response:send_chunk(ModData, Val, true),
-            %% httpd_response:send_final_chunk(ModData, true),
+            gdss_s3_httpd_response:send_header(ModData, 200, [{"timestamp", integer_to_list(Ts)}, {"content-length", integer_to_list(Vs)}, {"content-type", "binary/octet-stream"}]),
+            gdss_s3_httpd_response:send_chunk(ModData, Val, true),
+            %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
             {proceed, [{response, {already_sent, 200, Vs}} | ModData#mod.data]};
         key_not_exist ->
@@ -343,9 +343,9 @@ get_bucket(Bucket, QS, ModData) ->
 
     Xml = [XmlHead, XmlContents, XmlTail],
 
-    httpd_response:send_header(ModData, 200, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Xml))}]),
-    httpd_response:send_chunk(ModData, Xml, true),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 200, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Xml))}]),
+    gdss_s3_httpd_response:send_chunk(ModData, Xml, true),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 200, iolist_size(Xml)}} | ModData#mod.data]}.
 
@@ -401,10 +401,10 @@ get_service(_QS, ModData) ->
 
     Xml = [XmlHead, XmlOwner, XmlMid, XmlBuckets, XmlTail],
 
-    httpd_response:send_header(ModData, 200, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Xml))}]),
+    gdss_s3_httpd_response:send_header(ModData, 200, [{"content-type", "text/xml"}, {"content-length", integer_to_list(iolist_size(Xml))}]),
 
-    httpd_response:send_chunk(ModData, Xml, true),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_chunk(ModData, Xml, true),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 200, 0}} | ModData#mod.data]}.
 
@@ -425,8 +425,8 @@ put_object(Bucket, Key, Val, _QS, ModData) ->
 
     Flags = [{flagdata, ET ++ CT ++ XAmz}],
     ok = brick_simple:set(?S3_TABLE, make_brick_key(Bucket, Key), Val, 0, Flags, ?S3_TIMEOUT),
-    httpd_response:send_header(ModData, 200, []),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 200, []),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 200, 0}} | ModData#mod.data]}.
 
@@ -438,8 +438,8 @@ put_bucket(Bucket, _QS, ModData) ->
     true = add_atomic(?S3_BUCKET_TABLE, Bucket, {Key, httpd_util:rfc1123_date()}),
     ok = brick_simple:set(?S3_TABLE, make_base_key(Bucket), <<"">>, ?S3_TIMEOUT),
 
-    httpd_response:send_header(ModData, 200, []),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 200, []),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 200, 0}} | ModData#mod.data]}.
 
@@ -447,8 +447,8 @@ put_bucket(Bucket, _QS, ModData) ->
 %% @doc Handle the DELETE OBJECT request; delete the passed bucket/key from the brick.
 delete_object(Bucket, Key, ModData) ->
     ok = brick_simple:delete(?S3_TABLE, make_brick_key(Bucket, Key), ?S3_TIMEOUT),
-    httpd_response:send_header(ModData, 204, []),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 204, []),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 204, 0}} | ModData#mod.data]}.
 
@@ -466,8 +466,8 @@ delete_bucket(Bucket, ModData) ->
          || {BucketKey, _Ts, _Val, _Opts, _Flags} <- Data,
             <<_KeyBase:Size/binary, Key/binary>> <= BucketKey],
 
-    httpd_response:send_header(ModData, 204, []),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 204, []),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 204, 0}} | ModData#mod.data]}.
 
@@ -503,8 +503,8 @@ add_user(Name, ModData) ->
     XKey = binary_to_hexlist(BKey),
     {ok, KeyID} = append_atomic(?S3_USER_TABLE, {Name, XKey}),
 
-    httpd_response:send_header(ModData, 200, [{"x-amz-key-id", integer_to_list(KeyID)}, {"x-amz-key", XKey}]),
-    %% httpd_response:send_final_chunk(ModData, true),
+    gdss_s3_httpd_response:send_header(ModData, 200, [{"x-amz-key-id", integer_to_list(KeyID)}, {"x-amz-key", XKey}]),
+    %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
     {proceed, [{response, {already_sent, 200, 0}} | ModData#mod.data]}.
 

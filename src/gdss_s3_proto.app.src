@@ -28,9 +28,9 @@
   {mod, {gdss_s3_proto, []}},
   {modules, [gdss_s3_proto
              , gdss_s3_proto_sup
-             , httpd_request
-             , httpd_request_handler
-             , httpd_response
+             , gdss_s3_httpd_request
+             , gdss_s3_httpd_request_handler
+             , gdss_s3_httpd_response
              , mod_gdss_s3_proto
             ]},
   {env, [{brick_s3_conf_path, ""}
