@@ -640,19 +640,25 @@ make_auth(KeyID, KeyData, Verb, ContentMD5, ContentType, Date, AmzHeaders, Resou
 %% @spec (mod()) -> ok
 %% @doc Check the auth header of the request against one generated; return ok if successful.
 check_auth(ModData) ->
+    Name = key1search(ModData#mod.parsed_header, "x-amz-name"),
     case ModData#mod.method of
         "ADDUSER" ->
             ok;
         _ ->
-            KeyID = get_auth_key(ModData),
-            ModAuth = list_to_binary(key1search(ModData#mod.parsed_header, "authorization")),
-            {ok, _Ts} = load_table(?S3_USER_TABLE),
-            [{_, {_Name, HexKey}}] = ets:lookup(?S3_USER_TABLE, list_to_integer(KeyID)),
-            MakeAuth = iolist_to_binary(make_auth(KeyID, HexKey, ModData)),
-            if
-                MakeAuth =:= ModAuth ->
-                    ok
-            end
+	    if Name /= undefined ->
+		    %% PUT for add_user
+		    ok;
+	       true ->
+		    KeyID = get_auth_key(ModData),
+		    ModAuth = list_to_binary(key1search(ModData#mod.parsed_header, "authorization")),
+		    {ok, _Ts} = load_table(?S3_USER_TABLE),
+		    [{_, {_Name, HexKey}}] = ets:lookup(?S3_USER_TABLE, list_to_integer(KeyID)),
+		    MakeAuth = iolist_to_binary(make_auth(KeyID, HexKey, ModData)),
+		    if
+			MakeAuth =:= ModAuth ->
+			    ok
+		    end
+	    end
     end.
 
 %% @spec (string()) -> string()
