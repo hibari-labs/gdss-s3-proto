@@ -203,11 +203,14 @@ do_head(ModData, _Path, _QS, Bucket, Key) ->
 %% @spec (mod()) -> {proceed, binary()} | {break, binary()} | done
 %% @doc Handle all PUT requests.
 do_put(ModData, _Path, QS, Bucket, Key) ->
-    case Key of
-	[_|_] ->
+    case {Bucket, Key} of
+	{[_|_], [_|_]} ->
             put_object(Bucket, Key, ModData#mod.entity_body, QS, ModData);
-        [] ->
-            put_bucket(Bucket, QS, ModData)
+        {[_|_], []} ->
+            put_bucket(Bucket, QS, ModData);
+        {[], []} ->
+	    Name = key1search(ModData#mod.parsed_header, "x-amz-name"),
+	    add_user(Name, ModData)
     end.
 
 %% @spec (mod()) -> {proceed, binary()} | {break, binary()} | done
