@@ -339,7 +339,7 @@ get_bucket(Bucket, QS, ModData) ->
     {ok, {Data, _More}} = brick_simple:get_many(?S3_TABLE, Prefix, MaxKeys, [witness, get_all_attribs, {binary_prefix, Prefix}]),
 
     XmlContents = [ [ <<"  <Contents>\r\n">>, <<"    <Key>">>, Key, <<"</Key>\r\n">>, <<"    <LastModified>">>, make_date(Ts), <<"</LastModified>\r\n">>, <<"    <Size>">>, integer_to_list(proplists:get_value(val_len, Flags, 0)), <<"</Size>\r\n">>, XmlOwner, <<"  </Contents>\r\n">> ]
-                    || {BucketKey, Ts, Flags} <- Data,
+                    || {BucketKey, Ts, _Exp, Flags} <- Data,
                        <<_KeyBase:Size/binary, Key/binary>> <= BucketKey,
                        size(Key) > 0,
                        (Prefix =:= Base andalso PPrefix =/= true) orelse has_delimiter(Key, Delimiter) =:= false ],
@@ -427,7 +427,7 @@ put_object(Bucket, Key, Val, _QS, ModData) ->
                                                     string:str(K, "x-amz-") =:= 1],
 
     Flags = [{flagdata, ET ++ CT ++ XAmz}],
-    ok = brick_simple:set(?S3_TABLE, make_brick_key(Bucket, Key), Val, 0, Flags, ?S3_TIMEOUT),
+    {ok, _} = brick_simple:set(?S3_TABLE, make_brick_key(Bucket, Key), Val, 0, Flags, ?S3_TIMEOUT),
     gdss_s3_httpd_response:send_header(ModData, 200, []),
     %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
 
@@ -439,7 +439,7 @@ put_bucket(Bucket, _QS, ModData) ->
     Key = get_auth_key(ModData),
 
     true = add_atomic(?S3_BUCKET_TABLE, Bucket, {Key, httpd_util:rfc1123_date()}),
-    ok = brick_simple:set(?S3_TABLE, make_base_key(Bucket), <<"">>, ?S3_TIMEOUT),
+    {ok, _} = brick_simple:set(?S3_TABLE, make_base_key(Bucket), <<"">>, ?S3_TIMEOUT),
 
     gdss_s3_httpd_response:send_header(ModData, 200, []),
     %% gdss_s3_httpd_response:send_final_chunk(ModData, true),
@@ -466,7 +466,7 @@ delete_bucket(Bucket, ModData) ->
     Size = size(Base),
     {ok, {Data, _More}} = brick_simple:get_many(?S3_TABLE, Base, ?S3_MAX_KEYS, [witness, {binary_prefix, Base}]),
     _ = [ok = brick_simple:delete(?S3_TABLE, Key, ?S3_TIMEOUT)
-         || {BucketKey, _Ts, _Val, _Opts, _Flags} <- Data,
+         || {BucketKey, _Ts} <- Data,
             <<_KeyBase:Size/binary, Key/binary>> <= BucketKey],
 
     gdss_s3_httpd_response:send_header(ModData, 204, []),
