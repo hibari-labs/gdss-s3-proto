@@ -57,7 +57,7 @@
 -define(VMODULE,"S3").
 -define(DEFAULT_S3_CHECK_AUTH, true).
 -define(DEFAULT_S3_ENFORCE_AUTH, true).
--define(S3_TIMEOUT, 10000).
+-define(S3_TIMEOUT, 60000).  %% TODO: load from env
 -define(S3_MAX_KEYS, 55555).
 -define(S3_TABLE, 'tab1').
 -define(S3_MASTER, "MASTER").
