@@ -161,7 +161,7 @@ handle_call(Request, From, State) ->
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 handle_cast(Msg, State) ->
-    {reply, {cast_api_violation, Msg}, State}.
+    {noreply, {cast_api_violation, Msg}, State}.
 
 %%--------------------------------------------------------------------
 %% handle_info(Info, State) -> {noreply, State} |
