@@ -22,7 +22,7 @@
 {application, gdss_s3_proto,
  [
   {description, "Gemini Distributed Storage Service S3 Protocol Server"},
-  {vsn, "0.1.2"},
+  {vsn, "0.1.2.1"},
   {registered, []},
   {applications, [kernel, stdlib, sasl, gdss_client, inets]},
   {mod, {gdss_s3_proto, []}},
